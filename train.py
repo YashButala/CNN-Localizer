@@ -1,5 +1,6 @@
 import keras
-from keras.models import Sequential
+from keras.models import Sequential,model_from_json
+from keras.layers import BatchNormalization, Activation
 from keras.layers.core import Dense, Dropout, Activation, Flatten
 from keras.layers.convolutional import Convolution2D as Conv2D 
 from keras.layers.convolutional import MaxPooling2D 
@@ -18,11 +19,11 @@ from numpy import *
 from sklearn.utils import shuffle
 from sklearn.model_selection import train_test_split
 import sys
-ros_path = '/opt/ros/kinetic/lib/python2.7/dist-packages'
-if ros_path in sys.path:
-    sys.path.remove(ros_path)
+#ros_path = '/opt/ros/kinetic/lib/python2.7/dist-packages'
+#if ros_path in sys.path:
+#    sys.path.remove(ros_path)
 import cv2
-sys.path.append('/opt/ros/kinetic/lib/python2.7/dist-packages')
+#sys.path.append('/opt/ros/kinetic/lib/python2.7/dist-packages')
 import re
 from tqdm import tqdm
 import os
@@ -31,6 +32,7 @@ import array as arr
 a = arr.array('d', [1.1, 3.5, 4.5])
 img_dir='/data/images'
 ann_dir='/data/annotations'
+tmp=os.getcwd()
 files = os.listdir(os.getcwd()+ann_dir)
 imgsize=150
 
@@ -77,20 +79,52 @@ A,B=training_data()
 
 x_train,x_test,y_train,y_test=train_test_split(A,B,random_state=36)
 
+os.chdir(tmp)
+
+
+# load json and create model
+json_file = open('localizer.json', 'r')
+loaded_model_json = json_file.read()
+json_file.close()
+loaded_model = model_from_json(loaded_model_json)
+loaded_model.load_weights("localizer_wts.h5")
+print("Loaded model from disk")
+
+droprate=0.25
+
 model = Sequential()
 model.add(Conv2D(32, kernel_size=(5, 5), strides=(1, 1),activation='relu',input_shape=x_train[0].shape))
+model.add(BatchNormalization())
 model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+model.add(Dropout(droprate))
+
 model.add(Conv2D(64, (5, 5), activation='relu'))
+model.add(BatchNormalization())
 model.add(MaxPooling2D(pool_size=(2, 2)))
-model.add(Flatten())					
-model.add(Dense(1000, activation='relu'))
-model.add(Dense(400, activation='sigmoid'))
-model.add(Dense(100, activation='relu'))
-model.add(Dense(20, activation='sigmoid'))
+model.add(Dropout(droprate))
+
+model.add(Flatten())			
+
+model.add(Dense(1000))
+model.add(BatchNormalization())
+model.add(Activation('relu'))
+
+model.add(Dense(400))
+model.add(BatchNormalization())
+model.add(Activation('sigmoid'))
+
+model.add(Dense(100))
+model.add(BatchNormalization())
+model.add(Activation('relu'))
+
+model.add(Dense(40))
+model.add(BatchNormalization())
+model.add(Activation('sigmoid'))
+
 model.add(Dense(4, activation='linear'))
 
-batch_size = 100
-epochs = 1
+batch_size = 32
+epochs = 5
 
 
 opt = optimizers.Adam(lr=1e-3, decay=1e-3 / 200)
@@ -103,23 +137,16 @@ score = model.evaluate(x_test, y_test, verbose=0)
 print('Test loss:', score[0])
 print('Test accuracy:', score[1])
 
-os.chdir(os.getcwd())
+
 json_string = model.to_json()
-open('localizer.json', 'w').write(json_string)
+with open('localizer.json', 'w') as json_file:
+	json_file.write(json_string)
 yaml_string = model.to_yaml()
-open('localizer.yaml', 'w').write(yaml_string)
 
-# # save the weights in h5 format
-# model.save_weights('localizer_wts.h5')
-
-# # to read a saved model and weights
-# # model = model_from_json(open('my_model_architecture.json').read())
-# # model = model_from_yaml(open('my_model_architecture.yaml').read())
-# # model.load_weights('my_model_weights.h5')
+model.save_weights('localizer_wts.h5')
 
 
-
-plt.plot(history.history['mse'])
+plt.plot(history.history['mean_squared_error'])
 plt.title('Model loss')
 plt.ylabel('Loss')
 plt.xlabel('Epoch')
